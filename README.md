@@ -24,7 +24,7 @@ voices/
       sample1.txt
 ```
 
-Multiple samples are supported and will all be used for cloning. Transcripts are auto-generated on first run (Apple Silicon only via mlx-whisper) and saved alongside the audio; on Linux, provide `.txt` files manually or install a compatible Whisper backend.
+Multiple samples are supported and will all be used for cloning. Transcripts are auto-generated on first run and saved alongside the audio — using mlx-whisper on Apple Silicon or faster-whisper elsewhere.
 
 If your sample is in another format (m4a, opus, etc.), convert it first:
 

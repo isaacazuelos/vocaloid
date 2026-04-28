@@ -69,8 +69,21 @@ def transcribe(wav_path: Path) -> str:
         )
         return result["text"].strip()
     except ImportError:
-        console.print("[red]mlx-whisper not available.[/red] Install it (Apple Silicon only) or add .txt transcripts manually.")
-        raise SystemExit(1)
+        pass
+
+    try:
+        from faster_whisper import WhisperModel
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        compute_type = "float16" if device == "cuda" else "int8"
+        with console.status("Loading Whisper model..."):
+            fw_model = WhisperModel("large-v3", device=device, compute_type=compute_type)
+        segments, _ = fw_model.transcribe(str(wav_path))
+        return " ".join(seg.text for seg in segments).strip()
+    except ImportError:
+        pass
+
+    console.print("[red]No transcription backend available.[/red] Add .txt transcripts manually.")
+    raise SystemExit(1)
 
 
 def load_samples(voice_dir: Path) -> tuple[tuple[np.ndarray, int], str]:
