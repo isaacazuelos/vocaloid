@@ -1,8 +1,10 @@
 import argparse
 import contextlib
+import functools
 import os
 import readline  # noqa: F401 — imported for side effect (line editing in input())
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -59,6 +61,15 @@ def load_model():
             return Qwen3TTSModel.from_pretrained(MODEL, **kwargs)
 
 
+@functools.cache
+def _faster_whisper_model():
+    from faster_whisper import WhisperModel
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "float16" if device == "cuda" else "int8"
+    with console.status("Loading Whisper model..."):
+        return WhisperModel("large-v3", device=device, compute_type=compute_type)
+
+
 def transcribe(wav_path: Path) -> str:
     console.print(f"  Transcribing [dim]{wav_path.name}[/dim]...")
     try:
@@ -69,8 +80,16 @@ def transcribe(wav_path: Path) -> str:
         )
         return result["text"].strip()
     except ImportError:
-        console.print("[red]mlx-whisper not available.[/red] Only supported on Apple Silicon.")
-        raise SystemExit(1)
+        pass
+
+    try:
+        segments, _ = _faster_whisper_model().transcribe(str(wav_path))
+        return " ".join(seg.text for seg in segments).strip()
+    except ImportError:
+        pass
+
+    console.print("[red]No transcription backend available.[/red] Add .txt transcripts manually.")
+    raise SystemExit(1)
 
 
 def load_samples(voice_dir: Path) -> tuple[tuple[np.ndarray, int], str]:
@@ -128,8 +147,18 @@ def next_output_path(out_dir: Path) -> Path:
     return out_dir / f"output-{n}.wav"
 
 
+@functools.cache
+def _audio_player() -> list[str]:
+    if sys.platform == "darwin":
+        return ["afplay"]
+    for cmd in ("paplay", "aplay"):
+        if shutil.which(cmd):
+            return [cmd]
+    raise RuntimeError("No audio player found; install pulseaudio-utils or alsa-utils")
+
+
 def play(path: Path):
-    subprocess.Popen(["afplay", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen([*_audio_player(), str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def synthesise(model, text: str, language: str, voice_prompt, out_dir: Path, play_audio: bool):
@@ -154,7 +183,7 @@ def main():
     parser.add_argument("--voice", required=True, help="Voice name (folder under voices/)")
     parser.add_argument("--text", help="Text to synthesise (omit for interactive mode)")
     parser.add_argument("--language", default="English", help="Output language (default: English)")
-    parser.add_argument("--play", action="store_true", help="Play output audio (macOS)")
+    parser.add_argument("--play", action="store_true", help="Play output audio after synthesis")
     args = parser.parse_args()
 
     voice_dir = VOICES_DIR / args.voice

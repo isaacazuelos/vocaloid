@@ -10,8 +10,7 @@ notes.
 
 It's set up to use [Nix](https://nixos.org) with flakes enabled. See the flake 
 for a list of dependencies if you're installing them some other way. Otherwise 
-use `nix develop` to get everything set up. This also only really is going to
-work on macOS too.
+use `nix develop` to get everything set up. Works on macOS and Linux.
 
 ## Voice samples
 
@@ -25,7 +24,7 @@ voices/
       sample1.txt
 ```
 
-Multiple samples are supported and will all be used for cloning. Transcripts are auto-generated on first run (Apple Silicon only) and saved alongside the audio.
+Multiple samples are supported and will all be used for cloning. Transcripts are auto-generated on first run and saved alongside the audio — using mlx-whisper on Apple Silicon or faster-whisper elsewhere.
 
 If your sample is in another format (m4a, opus, etc.), convert it first:
 
