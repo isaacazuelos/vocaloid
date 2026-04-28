@@ -1,7 +1,9 @@
 import argparse
 import contextlib
 import os
+import readline  # noqa: F401 — imported for side effect (line editing in input())
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -126,14 +128,38 @@ def next_output_path(out_dir: Path) -> Path:
     return out_dir / f"output-{n}.wav"
 
 
+def play(path: Path):
+    subprocess.Popen(["afplay", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def synthesise(model, text: str, language: str, voice_prompt, out_dir: Path, play_audio: bool):
+    with console.status("Synthesising..."):
+        wavs, sr = model.generate_voice_clone(
+            text=text,
+            language=language,
+            voice_clone_prompt=voice_prompt,
+        )
+
+    out_path = next_output_path(out_dir)
+    sf.write(out_path, wavs[0], sr)
+    out_path.with_suffix(".txt").write_text(text)
+    console.print(f"Saved to [bold]{out_path}[/bold]")
+
+    if play_audio:
+        play(out_path)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Clone a voice using Qwen3-TTS Base")
     parser.add_argument("--voice", required=True, help="Voice name (folder under voices/)")
-    parser.add_argument("--text", required=True, help="Text to synthesise in the cloned voice")
+    parser.add_argument("--text", help="Text to synthesise (omit for interactive mode)")
     parser.add_argument("--language", default="English", help="Output language (default: English)")
+    parser.add_argument("--play", action="store_true", help="Play output audio (macOS)")
     args = parser.parse_args()
 
     voice_dir = VOICES_DIR / args.voice
+    out_dir = voice_dir / "out"
+
     console.print(f"Loading samples for [bold]{args.voice}[/bold]...")
     ref_audio, ref_text = load_samples(voice_dir)
 
@@ -145,17 +171,18 @@ def main():
             ref_text=ref_text,
         )
 
-    with console.status("Synthesising..."):
-        wavs, sr = model.generate_voice_clone(
-            text=args.text,
-            language=args.language,
-            voice_clone_prompt=voice_prompt,
-        )
-
-    out_path = next_output_path(voice_dir / "out")
-    sf.write(out_path, wavs[0], sr)
-    out_path.with_suffix(".txt").write_text(args.text)
-    console.print(f"Saved to [bold]{out_path}[/bold]")
+    if args.text:
+        synthesise(model, args.text, args.language, voice_prompt, out_dir, args.play)
+    else:
+        console.print("[dim]Interactive mode — type text to synthesise, Ctrl-C to quit.[/dim]")
+        try:
+            while True:
+                text = input("> ").strip()
+                if not text:
+                    continue
+                synthesise(model, text, args.language, voice_prompt, out_dir, args.play)
+        except (KeyboardInterrupt, EOFError):
+            console.print("\nBye.")
 
 
 if __name__ == "__main__":
