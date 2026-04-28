@@ -102,6 +102,15 @@ def load_samples(voice_dir: Path) -> tuple[tuple[np.ndarray, int], str]:
         console.print(f"  [green]✓[/green] {wav.relative_to(voice_dir)}")
 
     combined_audio = np.concatenate(clips)
+
+    # Real recordings often have peak values slightly above 1.0 due to
+    # floating-point conversion or minor clipping at capture time. The model
+    # warns (via a bare print) when it sees out-of-range values. Peak-normalise
+    # here so the signal is clean before it reaches the model.
+    peak = np.max(np.abs(combined_audio))
+    if peak > 1.0:
+        combined_audio = combined_audio / peak
+
     combined_text = " ".join(texts)
     return (combined_audio, sr), combined_text
 
@@ -145,6 +154,7 @@ def main():
 
     out_path = next_output_path(voice_dir / "out")
     sf.write(str(out_path), wavs[0], sr)
+    out_path.with_suffix(".txt").write_text(args.text)
     console.print(f"Saved to [bold]{out_path}[/bold]")
 
 
