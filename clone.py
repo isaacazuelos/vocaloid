@@ -1,8 +1,10 @@
 import argparse
 import contextlib
+import functools
 import os
 import readline  # noqa: F401 — imported for side effect (line editing in input())
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -59,6 +61,15 @@ def load_model():
             return Qwen3TTSModel.from_pretrained(MODEL, **kwargs)
 
 
+@functools.cache
+def _faster_whisper_model():
+    from faster_whisper import WhisperModel
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "float16" if device == "cuda" else "int8"
+    with console.status("Loading Whisper model..."):
+        return WhisperModel("large-v3", device=device, compute_type=compute_type)
+
+
 def transcribe(wav_path: Path) -> str:
     console.print(f"  Transcribing [dim]{wav_path.name}[/dim]...")
     try:
@@ -72,12 +83,7 @@ def transcribe(wav_path: Path) -> str:
         pass
 
     try:
-        from faster_whisper import WhisperModel
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        compute_type = "float16" if device == "cuda" else "int8"
-        with console.status("Loading Whisper model..."):
-            fw_model = WhisperModel("large-v3", device=device, compute_type=compute_type)
-        segments, _ = fw_model.transcribe(str(wav_path))
+        segments, _ = _faster_whisper_model().transcribe(str(wav_path))
         return " ".join(seg.text for seg in segments).strip()
     except ImportError:
         pass
@@ -141,12 +147,12 @@ def next_output_path(out_dir: Path) -> Path:
     return out_dir / f"output-{n}.wav"
 
 
+@functools.cache
 def _audio_player() -> list[str]:
     if sys.platform == "darwin":
         return ["afplay"]
-    # Try PulseAudio first (common on desktop Linux), fall back to ALSA
     for cmd in ("paplay", "aplay"):
-        if subprocess.run(["which", cmd], capture_output=True).returncode == 0:
+        if shutil.which(cmd):
             return [cmd]
     raise RuntimeError("No audio player found; install pulseaudio-utils or alsa-utils")
 
