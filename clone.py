@@ -69,7 +69,7 @@ def transcribe(wav_path: Path) -> str:
         )
         return result["text"].strip()
     except ImportError:
-        console.print("[red]mlx-whisper not available.[/red] Only supported on Apple Silicon.")
+        console.print("[red]mlx-whisper not available.[/red] Install it (Apple Silicon only) or add .txt transcripts manually.")
         raise SystemExit(1)
 
 
@@ -128,8 +128,18 @@ def next_output_path(out_dir: Path) -> Path:
     return out_dir / f"output-{n}.wav"
 
 
+def _audio_player() -> list[str]:
+    if sys.platform == "darwin":
+        return ["afplay"]
+    # Try PulseAudio first (common on desktop Linux), fall back to ALSA
+    for cmd in ("paplay", "aplay"):
+        if subprocess.run(["which", cmd], capture_output=True).returncode == 0:
+            return [cmd]
+    raise RuntimeError("No audio player found; install pulseaudio-utils or alsa-utils")
+
+
 def play(path: Path):
-    subprocess.Popen(["afplay", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen([*_audio_player(), str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def synthesise(model, text: str, language: str, voice_prompt, out_dir: Path, play_audio: bool):
@@ -154,7 +164,7 @@ def main():
     parser.add_argument("--voice", required=True, help="Voice name (folder under voices/)")
     parser.add_argument("--text", help="Text to synthesise (omit for interactive mode)")
     parser.add_argument("--language", default="English", help="Output language (default: English)")
-    parser.add_argument("--play", action="store_true", help="Play output audio (macOS)")
+    parser.add_argument("--play", action="store_true", help="Play output audio after synthesis")
     args = parser.parse_args()
 
     voice_dir = VOICES_DIR / args.voice
