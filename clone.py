@@ -1,5 +1,7 @@
 import argparse
+import contextlib
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -17,10 +19,8 @@ from rich.console import Console
 # of the import. This is the least invasive option short of patching the venv,
 # which would be wiped on the next `uv sync`. Nothing else prints to stdout
 # during this import, so nothing legitimate is lost.
-with open(os.devnull, "w") as _devnull:
-    sys.stdout = _devnull
+with open(os.devnull, "w") as _devnull, contextlib.redirect_stdout(_devnull):
     from qwen_tts import Qwen3TTSModel
-    sys.stdout = sys.__stdout__
 
 # transformers warns about pad_token_id defaulting to eos_token_id during
 # open-ended generation. This is expected behaviour for this model and not
@@ -52,7 +52,7 @@ def load_model():
     try:
         with console.status("Loading model..."):
             return Qwen3TTSModel.from_pretrained(MODEL, local_files_only=True, **kwargs)
-    except Exception:
+    except OSError:
         with console.status("Downloading model..."):
             return Qwen3TTSModel.from_pretrained(MODEL, **kwargs)
 
@@ -92,7 +92,7 @@ def load_samples(voice_dir: Path) -> tuple[tuple[np.ndarray, int], str]:
             txt.write_text(transcript)
         else:
             transcript = txt.read_text().strip()
-        data, file_sr = sf.read(str(wav))
+        data, file_sr = sf.read(wav)
         if sr is None:
             sr = file_sr
         elif file_sr != sr:
@@ -117,8 +117,12 @@ def load_samples(voice_dir: Path) -> tuple[tuple[np.ndarray, int], str]:
 
 def next_output_path(out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    existing = sorted(out_dir.glob("output-*.wav"))
-    n = len(existing) + 1
+    indices = [
+        int(m.group(1))
+        for f in out_dir.glob("output-*.wav")
+        if (m := re.search(r"output-(\d+)\.wav$", f.name))
+    ]
+    n = max(indices, default=0) + 1
     return out_dir / f"output-{n}.wav"
 
 
@@ -130,10 +134,6 @@ def main():
     args = parser.parse_args()
 
     voice_dir = VOICES_DIR / args.voice
-    if not voice_dir.exists():
-        console.print(f"[red]Voice folder not found: {voice_dir}[/red]")
-        raise SystemExit(1)
-
     console.print(f"Loading samples for [bold]{args.voice}[/bold]...")
     ref_audio, ref_text = load_samples(voice_dir)
 
@@ -153,7 +153,7 @@ def main():
         )
 
     out_path = next_output_path(voice_dir / "out")
-    sf.write(str(out_path), wavs[0], sr)
+    sf.write(out_path, wavs[0], sr)
     out_path.with_suffix(".txt").write_text(args.text)
     console.print(f"Saved to [bold]{out_path}[/bold]")
 
